@@ -83,25 +83,25 @@ type Source struct {
 
 // Package は管理対象 1 件。
 type Package struct {
-	Name string `yaml:"name"`
-	Type string `yaml:"type"`
+	Name string `yaml:"name" json:"name"`
+	Type string `yaml:"type" json:"type"`
 
 	// 取得元。git / url / local のいずれか（from は共有取得元の別名解決）。
-	From  string `yaml:"from,omitempty"`
-	Git   string `yaml:"git,omitempty"`
-	Ref   string `yaml:"ref,omitempty"`
-	Path  string `yaml:"path,omitempty"`
-	Local string `yaml:"local,omitempty"`
+	From  string `yaml:"from,omitempty" json:"from,omitempty"`
+	Git   string `yaml:"git,omitempty" json:"git,omitempty"`
+	Ref   string `yaml:"ref,omitempty" json:"ref,omitempty"`
+	Path  string `yaml:"path,omitempty" json:"path,omitempty"`
+	Local string `yaml:"local,omitempty" json:"local,omitempty"`
 	// URL は書庫（tar.gz / tgz / zip）の取得先。Git・Local と排他。
-	URL string `yaml:"url,omitempty"`
+	URL string `yaml:"url,omitempty" json:"url,omitempty"`
 	// SHA256 は書庫本体に期待する 16 進 64 文字のダイジェスト。任意。
-	SHA256 string `yaml:"sha256,omitempty"`
+	SHA256 string `yaml:"sha256,omitempty" json:"sha256,omitempty"`
 
-	Scope    string `yaml:"scope,omitempty"`
-	Strategy string `yaml:"strategy,omitempty"`
+	Scope    string `yaml:"scope,omitempty" json:"scope,omitempty"`
+	Strategy string `yaml:"strategy,omitempty" json:"strategy,omitempty"`
 
 	// Profiles は所属プロファイル。空なら常に選択される。
-	Profiles []string `yaml:"profiles,omitempty"`
+	Profiles []string `yaml:"profiles,omitempty" json:"profiles,omitempty"`
 }
 
 // HasProfile は p が profile に属するかを返す。

@@ -51,19 +51,19 @@ const (
 
 // Change は sync の結果 1 件。
 type Change struct {
-	Name    string
-	Type    string
-	Action  Action
-	Dest    string
-	Target  string
-	Warning string
-	Err     error
+	Name    string `json:"name"`
+	Type    string `json:"type"`
+	Action  Action `json:"action"`
+	Dest    string `json:"dest,omitempty"`
+	Target  string `json:"target,omitempty"`
+	Warning string `json:"warning,omitempty"`
+	Err     error  `json:"-"`
 }
 
 // SyncReport は sync 全体の結果。
 type SyncReport struct {
-	Changes []Change
-	DryRun  bool
+	Changes []Change `json:"changes"`
+	DryRun  bool     `json:"dry_run"`
 }
 
 // Failed は失敗した件数を返す。

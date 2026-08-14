@@ -39,7 +39,7 @@ type UpdateReport struct {
 	Changes []UpdateChange `json:"changes"`
 	DryRun  bool           `json:"dry_run"`
 	// Sync は更新後に走らせた同期の結果。走らせなかったときは nil。
-	Sync *SyncReport `json:"-"`
+	Sync *SyncReport `json:"sync,omitempty"`
 }
 
 // Counts は操作ごとの件数を返す。
