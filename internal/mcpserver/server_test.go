@@ -100,17 +100,26 @@ func addLocalSkill(t *testing.T, dir, name string) {
 // TestResolveLocalSource は dir を基点にした解決が、サーバープロセス自身の cwd に
 // 依存しないことを確かめる（一度実際に壊れたことがある: dir とプロセスの cwd が
 // 異なる状況で './' 始まりの source が誤ってプロセスの cwd から探された）。
+//
+// 期待値は filepath.Join で組み立てる — "/tmp/proj" のような '/' 決め打ちの
+// 文字列リテラルは Windows では区切り文字が '\' になるため一致しない
+// (一度これで Windows CI を落としたことがある)。t.TempDir() は各 OS で
+// 正しい絶対パス（Windows ならドライブレター付き）を返すのでそれも利用する。
 func TestResolveLocalSource(t *testing.T) {
+	dir := t.TempDir()
+	sub := filepath.Join(dir, "sub")
+	elsewhere := t.TempDir()
+
 	cases := []struct {
 		name, dir, source, want string
 	}{
-		{"relative dot-slash joins with dir", "/tmp/proj", "./local/skills/demo", "/tmp/proj/local/skills/demo"},
-		{"relative dot-dot joins with dir", "/tmp/proj/sub", "../local/skills/demo", "/tmp/proj/local/skills/demo"},
-		{"bare dot joins with dir", "/tmp/proj", ".", "/tmp/proj"},
-		{"already-absolute path is untouched", "/tmp/proj", "/elsewhere/demo", "/elsewhere/demo"},
-		{"git shorthand is untouched", "/tmp/proj", "owner/repo", "owner/repo"},
-		{"git url is untouched", "/tmp/proj", "https://github.com/owner/repo", "https://github.com/owner/repo"},
-		{"archive url is untouched", "/tmp/proj", "https://example.com/x.tar.gz", "https://example.com/x.tar.gz"},
+		{"relative dot-slash joins with dir", dir, "./local/skills/demo", filepath.Join(dir, "local", "skills", "demo")},
+		{"relative dot-dot joins with dir", sub, "../local/skills/demo", filepath.Join(dir, "local", "skills", "demo")},
+		{"bare dot joins with dir", dir, ".", filepath.Join(dir, ".")},
+		{"already-absolute path is untouched", dir, elsewhere, elsewhere},
+		{"git shorthand is untouched", dir, "owner/repo", "owner/repo"},
+		{"git url is untouched", dir, "https://github.com/owner/repo", "https://github.com/owner/repo"},
+		{"archive url is untouched", dir, "https://example.com/x.tar.gz", "https://example.com/x.tar.gz"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
