@@ -160,8 +160,19 @@ func swap(dest, target string) error {
 		return err
 	}
 	if err := os.Rename(tmp, dest); err != nil {
-		_ = os.Remove(tmp)
-		return err
+		// Windows の MoveFileEx は MOVEFILE_REPLACE_EXISTING で置換先を扱えない
+		// （ディレクトリを指す symlink も対象に含む）。呼び出し元の ApplyWith が
+		// dest が symlink であることを確かめ済みなので、削除してから作り直す。
+		// 削除と rename の間に一瞬 dest が存在しない区間ができるが、Windows には
+		// ディレクトリ symlink を原子的に置き換える手段がない。
+		if rmErr := os.Remove(dest); rmErr != nil {
+			_ = os.Remove(tmp)
+			return err
+		}
+		if err := os.Rename(tmp, dest); err != nil {
+			_ = os.Remove(tmp)
+			return err
+		}
 	}
 	return nil
 }
