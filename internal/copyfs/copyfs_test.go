@@ -77,6 +77,11 @@ func TestDirSkipsSymlinks(t *testing.T) {
 func TestDirSkipsIrregularFiles(t *testing.T) {
 	// syscall.Mkfifo は Windows に無く、この 1 件のためにビルドタグ付きの
 	// ファイルを増やしたくないので mkfifo(1) を借りる。
+	// Git for Windows 由来の mkfifo が PATH に乗っていることがあるが、
+	// NTFS 上では名前付きパイプを作れず期待通りに動かないため先に弾く。
+	if runtime.GOOS == "windows" {
+		t.Skip("named pipes are not available on this platform")
+	}
 	mkfifo, err := exec.LookPath("mkfifo")
 	if err != nil {
 		t.Skipf("mkfifo is not available in this environment: %v", err)
@@ -357,6 +362,10 @@ func assertFile(t *testing.T, p, want string, wantExec bool) {
 	}
 	if string(body) != want {
 		t.Fatalf("content of %s = %q, want %q", p, body, want)
+	}
+	// NTFS に実行ビットの概念がなく、常に false になる。
+	if runtime.GOOS == "windows" {
+		return
 	}
 	fi, err := os.Stat(p)
 	if err != nil {

@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -65,6 +66,10 @@ func TestTreeDetectsContentAndShapeChanges(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// NTFS に実行ビットの概念がなく、chmod は digest に影響しない。
+			if tt.name == "added exec bit" && runtime.GOOS == "windows" {
+				t.Skip("exec bit has no meaning on this platform")
+			}
 			root := mkBaseTree(t)
 			before := mustTree(t, root)
 			tt.mutate(t, root)
@@ -107,6 +112,12 @@ func TestTreeGoldenValue(t *testing.T) {
 	// state.json に記録済みの digest と突き合わせる以上、アルゴリズムが黙って変わると
 	// 「利用者が編集した」と全件誤判定する。値を固定して、意図しない変更を検知する。
 	// 意図して書式を変えるときは TreeVersion を上げたうえでこの定数を更新すること。
+	//
+	// 期待値は実行ビット付きファイルを含む。NTFS には実行ビットの概念がなく
+	// 値が一致しないため、この環境では検証できない。
+	if runtime.GOOS == "windows" {
+		t.Skip("golden value depends on the exec bit, which has no meaning on this platform")
+	}
 	root := t.TempDir()
 	mkFile(t, root, "SKILL.md", "hello\n", false)
 	mkFile(t, root, "bin/run.sh", "#!/bin/sh\n", true)

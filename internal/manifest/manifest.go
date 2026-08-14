@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -416,6 +417,12 @@ func validateGit(p Package) error {
 	if strings.HasPrefix(p.Git, "git@") || scpLikeRe.MatchString(p.Git) {
 		return nil
 	}
+	// Windows の絶対パス（C:\...）は url.Parse がドライブレターをスキームと
+	// 誤認識する（scheme "c" と判定される）ため、URL 解析より先にローカルパス
+	// として判定する。
+	if filepath.IsAbs(p.Git) {
+		return nil
+	}
 	u, err := url.Parse(p.Git)
 	if err != nil {
 		return fmt.Errorf("package %q: git is not a valid URL: %w", p.Name, err)
@@ -471,7 +478,10 @@ func boolCount(bs ...bool) int {
 
 // checkRelPath は相対パスであることと、基準ディレクトリの外へ抜けないことを確認する。
 func checkRelPath(pkg, field, v string) error {
-	if filepath.IsAbs(v) {
+	// kata.yml は複数 OS で共有される前提なので、実行環境の filepath.IsAbs だけでは
+	// 足りない。Windows 上で filepath.IsAbs("/etc/passwd") は false になる
+	// （ボリューム名を欠くため）ので、Unix 形式の絶対パスも別途弾く。
+	if filepath.IsAbs(v) || path.IsAbs(filepath.ToSlash(v)) {
 		return fmt.Errorf("package %q: %s must be a relative path", pkg, field)
 	}
 	clean := filepath.Clean(v)

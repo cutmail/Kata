@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -215,6 +216,9 @@ func TestLockRejectsNonCommitPin(t *testing.T) {
 // 複製先は git 管理下で、権限は 0644 に緩む。そのまま push すると
 // 内容と保護を同時に失う。
 func TestImportReportsRestrictedPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix permission bits do not apply on this platform")
+	}
 	f := newFixture(t)
 	dir := f.addClaudeSkill(t, "creds", "# creds\n")
 	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("API_KEY=x"), 0o600); err != nil {
