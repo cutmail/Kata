@@ -7,12 +7,12 @@ import (
 
 // RemoveResult は削除操作の結果。
 type RemoveResult struct {
-	Name string
-	Dest string
+	Name string `json:"name"`
+	Dest string `json:"dest,omitempty"`
 	// Unlinked は実際にリンクを取り除いたかを示す。
-	Unlinked bool
+	Unlinked bool `json:"unlinked"`
 	// Warning は配置先に手が加わっていた場合などの注意。
-	Warning string
+	Warning string `json:"warning,omitempty"`
 }
 
 // Remove は宣言と配置の両方からパッケージを取り除く。

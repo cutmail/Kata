@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/cutmail/kata/internal/app"
+	"github.com/cutmail/kata/internal/manifest"
 )
 
 // version はビルド時に -ldflags で差し替える。
@@ -45,7 +46,7 @@ func newRootCmd() *cobra.Command {
 		SilenceErrors: true,
 	}
 	root.AddCommand(newInitCmd(), newAddCmd(), newSyncCmd(), newListCmd(), newRemoveCmd(),
-		newStatusCmd(), newImportCmd(), newUpdateCmd(), newDoctorCmd(), newPruneCmd())
+		newStatusCmd(), newImportCmd(), newUpdateCmd(), newDoctorCmd(), newPruneCmd(), newMCPCmd())
 	return root
 }
 
@@ -55,16 +56,19 @@ func openApp() (*app.App, app.Config, error) {
 	if err != nil {
 		return nil, app.Config{}, err
 	}
-	cfg, err := app.DefaultConfig(wd)
-	if err != nil {
-		return nil, cfg, err
-	}
-	a, err := app.Open(cfg)
-	return a, cfg, err
+	return app.OpenFrom(wd)
+}
+
+// encodeJSON は --json 系フラグの出力形式を統一する。
+func encodeJSON(v any) error {
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(v)
 }
 
 func newInitCmd() *cobra.Command {
-	return &cobra.Command{
+	var asJSON bool
+	cmd := &cobra.Command{
 		Use:   "init [dir]",
 		Short: "Create a kata.yml in the current directory",
 		Args:  cobra.MaximumNArgs(1),
@@ -77,16 +81,26 @@ func newInitCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if asJSON {
+				return encodeJSON(initResult{Path: path})
+			}
 			fmt.Printf("created %s\n", short(path))
 			fmt.Println("put your own skills under local/ and register them with 'kata add'")
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&asJSON, "json", false, "print the result as JSON")
+	return cmd
+}
+
+// initResult は init --json の出力形。
+type initResult struct {
+	Path string `json:"path"`
 }
 
 func newAddCmd() *cobra.Command {
 	var spec app.AddSpec
-	var noSync bool
+	var noSync, asJSON bool
 
 	cmd := &cobra.Command{
 		Use:   "add <source>",
@@ -107,8 +121,13 @@ func newAddCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Printf("added %s (%s) to %s\n", p.Name, p.Type, short(cfg.ManifestPath))
+			if !asJSON {
+				fmt.Printf("added %s (%s) to %s\n", p.Name, p.Type, short(cfg.ManifestPath))
+			}
 			if noSync {
+				if asJSON {
+					return encodeJSON(addResult{Package: p})
+				}
 				fmt.Println("run 'kata sync' to deploy it")
 				return nil
 			}
@@ -118,9 +137,15 @@ func newAddCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			rep, err := a.Sync(ctx, app.SyncOptions{})
+			rep, serr := a.Sync(ctx, app.SyncOptions{})
+			if asJSON {
+				if jerr := encodeJSON(addResult{Package: p, Sync: rep}); jerr != nil {
+					return jerr
+				}
+				return serr
+			}
 			printSync(rep)
-			return err
+			return serr
 		},
 	}
 	cmd.Flags().StringVar(&spec.Name, "name", "", "package name (defaults to the last path element)")
@@ -133,11 +158,19 @@ func newAddCmd() *cobra.Command {
 		"deployment strategy: link, copy or auto (defaults to link)")
 	cmd.Flags().StringSliceVar(&spec.Profiles, "profile", nil, "profiles this package belongs to (repeatable)")
 	cmd.Flags().BoolVar(&noSync, "no-sync", false, "only update the manifest, do not deploy")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "print the result as JSON")
 	return cmd
+}
+
+// addResult は add --json の出力形。
+type addResult struct {
+	Package manifest.Package `json:"package"`
+	Sync    *app.SyncReport  `json:"sync,omitempty"`
 }
 
 func newSyncCmd() *cobra.Command {
 	var opts app.SyncOptions
+	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "sync",
 		Short: "Make the deployed state match the manifest",
@@ -152,6 +185,15 @@ func newSyncCmd() *cobra.Command {
 				opts.Profile = os.Getenv("KATA_PROFILE")
 			}
 			rep, err := a.Sync(context.Background(), opts)
+			if asJSON {
+				if rep != nil && rep.Changes == nil {
+					rep.Changes = []app.Change{}
+				}
+				if jerr := encodeJSON(rep); jerr != nil {
+					return jerr
+				}
+				return err
+			}
 			printSync(rep)
 			return err
 		},
@@ -162,11 +204,18 @@ func newSyncCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.Prune, "prune", false, "also undeploy packages the profile leaves out")
 	cmd.Flags().BoolVar(&opts.Adopt, "adopt", false,
 		"take ownership of a copied destination whose contents already match")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "print the result as JSON")
 	return cmd
 }
 
+// itemsResult は list --json の出力形。
+type itemsResult struct {
+	Items []app.Item `json:"items"`
+}
+
 func newListCmd() *cobra.Command {
-	return &cobra.Command{
+	var asJSON bool
+	cmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
 		Short:   "Show declared packages and their current state",
@@ -179,6 +228,12 @@ func newListCmd() *cobra.Command {
 			items, err := a.List(context.Background())
 			if err != nil {
 				return err
+			}
+			if asJSON {
+				if items == nil {
+					items = []app.Item{}
+				}
+				return encodeJSON(itemsResult{Items: items})
 			}
 			if len(items) == 0 {
 				fmt.Println("no packages declared yet; add one with 'kata add'")
@@ -193,6 +248,8 @@ func newListCmd() *cobra.Command {
 			return w.Flush()
 		},
 	}
+	cmd.Flags().BoolVar(&asJSON, "json", false, "print the packages as JSON")
+	return cmd
 }
 
 func newStatusCmd() *cobra.Command {
@@ -215,9 +272,7 @@ func newStatusCmd() *cobra.Command {
 			}
 			switch {
 			case asJSON:
-				enc := json.NewEncoder(os.Stdout)
-				enc.SetIndent("", "  ")
-				if err := enc.Encode(sum); err != nil {
+				if err := encodeJSON(sum); err != nil {
 					return err
 				}
 			case !quiet:
@@ -278,6 +333,7 @@ func statusMarker(s app.Status) string {
 func newImportCmd() *cobra.Command {
 	var opts app.ImportOptions
 	var types string
+	var asJSON bool
 
 	cmd := &cobra.Command{
 		Use:   "import [name...]",
@@ -297,6 +353,15 @@ func newImportCmd() *cobra.Command {
 				opts.Types = strings.Split(types, ",")
 			}
 			rep, err := a.Import(context.Background(), opts)
+			if asJSON {
+				if rep != nil && rep.Items == nil {
+					rep.Items = []app.ImportItem{}
+				}
+				if jerr := encodeJSON(rep); jerr != nil {
+					return jerr
+				}
+				return err
+			}
 			printImport(rep)
 			return err
 		},
@@ -304,6 +369,7 @@ func newImportCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.DryRun, "dry-run", false, "show what would be imported without writing anything")
 	cmd.Flags().BoolVar(&opts.Adopt, "adopt", false, "move the originals aside and link to the copies under local/")
 	cmd.Flags().StringVar(&types, "type", "", "only import these types (comma separated: skill,command,agent)")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "print the result as JSON")
 	return cmd
 }
 
@@ -363,6 +429,7 @@ func printImport(rep *app.ImportReport) {
 
 func newUpdateCmd() *cobra.Command {
 	var opts app.UpdateOptions
+	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "update [name...]",
 		Short: "Re-resolve floating refs and move the lock forward",
@@ -377,12 +444,27 @@ func newUpdateCmd() *cobra.Command {
 			}
 			opts.Names = args
 			rep, err := a.Update(context.Background(), opts)
+			if asJSON {
+				if rep != nil {
+					if rep.Changes == nil {
+						rep.Changes = []app.UpdateChange{}
+					}
+					if rep.Sync != nil && rep.Sync.Changes == nil {
+						rep.Sync.Changes = []app.Change{}
+					}
+				}
+				if jerr := encodeJSON(rep); jerr != nil {
+					return jerr
+				}
+				return err
+			}
 			printUpdate(rep)
 			return err
 		},
 	}
 	cmd.Flags().BoolVar(&opts.DryRun, "dry-run", false, "show which commits would move without writing the lock")
 	cmd.Flags().BoolVar(&opts.NoSync, "no-sync", false, "update the lock but leave the deployment as it is")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "print the result as JSON")
 	return cmd
 }
 
@@ -463,9 +545,7 @@ func newDoctorCmd() *cobra.Command {
 				return err
 			}
 			if asJSON {
-				enc := json.NewEncoder(os.Stdout)
-				enc.SetIndent("", "  ")
-				if err := enc.Encode(rep); err != nil {
+				if err := encodeJSON(rep); err != nil {
 					return err
 				}
 			} else {
@@ -501,6 +581,7 @@ func printDoctor(rep *app.DoctorReport) {
 
 func newPruneCmd() *cobra.Command {
 	var opts app.PruneOptions
+	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "prune",
 		Short: "Remove cached content that nothing refers to any more",
@@ -519,6 +600,12 @@ func newPruneCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if asJSON {
+				if rep.Items == nil {
+					rep.Items = []app.PruneItem{}
+				}
+				return encodeJSON(rep)
+			}
 			printPrune(rep)
 			return nil
 		},
@@ -528,6 +615,7 @@ func newPruneCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.Staging, "staging", false, "consider leftovers from interrupted fetches")
 	cmd.Flags().BoolVar(&opts.State, "state", false, "consider deployment records whose destination is gone")
 	cmd.Flags().DurationVar(&opts.OlderThan, "older-than", 0, "only consider items older than this (e.g. 720h)")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "print the result as JSON")
 	return cmd
 }
 
@@ -580,7 +668,8 @@ func humanBytes(n int64) string {
 }
 
 func newRemoveCmd() *cobra.Command {
-	return &cobra.Command{
+	var asJSON bool
+	cmd := &cobra.Command{
 		Use:     "remove <name>",
 		Aliases: []string{"rm"},
 		Short:   "Remove a package from the manifest and undeploy it",
@@ -594,6 +683,9 @@ func newRemoveCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if asJSON {
+				return encodeJSON(res)
+			}
 			if res.Unlinked {
 				fmt.Printf("removed %s (%s)\n", res.Name, short(res.Dest))
 			} else {
@@ -605,6 +697,8 @@ func newRemoveCmd() *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&asJSON, "json", false, "print the result as JSON")
+	return cmd
 }
 
 // printSync は sync の結果を人が読める形で出力する。

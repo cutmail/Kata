@@ -130,6 +130,19 @@ func envOr(key, fallback string) string {
 	return fallback
 }
 
+// OpenFrom は startDir から上向きに kata.yml を探し、見つかった設定で App を開く。
+//
+// CLI はカレントディレクトリを起点に、MCP サーバーは呼び出しごとの dir 引数を起点に
+// この関数を呼ぶ。「startDir に cd してコマンドを実行した」のと同じ結果になる。
+func OpenFrom(startDir string) (*App, Config, error) {
+	cfg, err := DefaultConfig(startDir)
+	if err != nil {
+		return nil, cfg, err
+	}
+	a, err := Open(cfg)
+	return a, cfg, err
+}
+
 // Open は設定に従って各層を初期化する。
 func Open(cfg Config) (*App, error) {
 	man, err := manifest.Load(cfg.ManifestPath)
