@@ -43,6 +43,8 @@ $ kata sync
 - **Bring your own skills.** Sources can be a git repository (with a subdirectory), or a directory
   inside your own repo — so skills you write yourself are versioned alongside the manifest.
 - **Single binary.** Pure Go, no runtime dependencies, builds for macOS, Linux and Windows.
+- **Agent-friendly.** Every command has a `--json` output, and `kata mcp` exposes kata's operations
+  as MCP tools — see [Using kata from an AI agent](#using-kata-from-an-ai-agent).
 
 ## Install
 
@@ -201,6 +203,15 @@ $ kata sync
 | `kata prune` | Remove cached content nothing refers to any more |
 | `kata remove <name>` | Remove a package from the manifest and undeploy it |
 
+Every command accepts `--json`, which prints its result as JSON on stdout instead of the human-readable
+text above — see [Using kata from an AI agent](#using-kata-from-an-ai-agent).
+
+`kata init` flags:
+
+| Flag | Description |
+| --- | --- |
+| `--json` | Print `{"path": "..."}` instead of the confirmation text |
+
 `kata add` flags:
 
 | Flag | Description |
@@ -214,6 +225,7 @@ $ kata sync
 | `--strategy link\|copy\|auto` | How to deploy (defaults to `link`) |
 | `--profile <name>` | Profiles this package belongs to (repeatable) |
 | `--no-sync` | Only update the manifest, do not deploy |
+| `--json` | Print the added package (and sync result, unless `--no-sync`) as JSON |
 
 `kata sync` flags:
 
@@ -224,6 +236,20 @@ $ kata sync
 | `--profile <name>` | Only deploy packages in this profile (defaults to `$KATA_PROFILE`) |
 | `--prune` | Also undeploy packages the profile leaves out |
 | `--adopt` | Take ownership of a copied destination whose contents already match |
+| `--json` | Print the sync report as JSON |
+
+`kata list` flags:
+
+| Flag | Description |
+| --- | --- |
+| `--json` | Print `{"items": [...]}` instead of the table |
+
+`kata status` flags:
+
+| Flag | Description |
+| --- | --- |
+| `-q`, `--quiet` | Print nothing; report the result through the exit code only |
+| `--json` | Print the summary as JSON |
 
 `kata import` flags:
 
@@ -232,6 +258,22 @@ $ kata sync
 | `--dry-run` | Show what would be imported without writing anything |
 | `--adopt` | Move the originals aside and link to the copies under `local/` |
 | `--type <list>` | Only import these types (comma separated) |
+| `--json` | Print the import report as JSON |
+
+`kata update` flags:
+
+| Flag | Description |
+| --- | --- |
+| `--dry-run` | Show which commits would move without writing the lock (still hits the network) |
+| `--no-sync` | Update the lock but leave the deployment as it is |
+| `--json` | Print the update report as JSON |
+
+`kata doctor` flags:
+
+| Flag | Description |
+| --- | --- |
+| `--strict` | Exit with 1 on warnings too, not just errors |
+| `--json` | Print the report as JSON |
 
 `kata prune` flags:
 
@@ -240,6 +282,13 @@ $ kata sync
 | `--apply` | Actually remove the listed items (nothing is removed without it) |
 | `--store` / `--staging` / `--state` | Which kinds to consider (defaults to store and staging) |
 | `--older-than <dur>` | Only consider items older than this |
+| `--json` | Print the prune report as JSON |
+
+`kata remove` flags:
+
+| Flag | Description |
+| --- | --- |
+| `--json` | Print the result as JSON |
 
 The source argument accepts `owner/repo`, `github.com/owner/repo`, a full git URL, an archive URL
 ending in `.tar.gz`/`.tgz`/`.zip`, or a path inside the manifest directory. Type and name are
@@ -249,6 +298,68 @@ An `agent` is also a `.md` file, so it cannot be inferred — pass `--type agent
 `kata list` reports one of `linked`, `copied`, `missing`, `drifted`, `broken`, or `orphan`, so you
 can tell at a glance whether the machine still matches what you declared. `kata status` shows only
 the entries that need attention and exits with 1 when there are any, which makes it usable in CI.
+
+## Using kata from an AI agent
+
+kata is meant to be driven by an agent directly, not only by a human typing commands. There are
+two ways to do that.
+
+### `--json`
+
+Every command accepts `--json`, which prints its result as JSON on stdout instead of the
+human-readable text shown above:
+
+```console
+$ kata add ./local/skills/pdf --json
+{
+  "package": {
+    "name": "pdf",
+    "type": "skill",
+    "local": "./local/skills/pdf",
+    "scope": "user",
+    "strategy": "link"
+  },
+  "sync": {
+    "changes": [
+      { "name": "pdf", "type": "skill", "action": "create", "dest": "/home/you/.claude/skills/pdf" }
+    ],
+    "dry_run": false
+  }
+}
+```
+
+The exit code still reflects success/failure the same way it does without `--json` (for example
+`kata status --json` still exits 1 when something is out of sync), so scripts that only check the
+exit code keep working unchanged.
+
+### `kata mcp`
+
+`kata mcp` runs kata itself as an [MCP](https://modelcontextprotocol.io) server over stdio, so an
+agent can call kata's operations as tools instead of shelling out to the CLI. Register it with
+Claude Code:
+
+```console
+$ claude mcp add kata -- kata mcp
+```
+
+Every tool takes an optional `dir` argument used to locate `kata.yml` — the same way the CLI
+locates it from the current directory — which defaults to the server process's own working
+directory when omitted. This is a different feature from the "MCP server configuration merging"
+roadmap item below: that one is about kata managing *other* tools' MCP config as a deployment
+target; `kata mcp` is kata *itself* acting as an MCP server.
+
+| Tool | Does | Notes |
+| --- | --- | --- |
+| `kata_init` | `kata init` | |
+| `kata_list` | `kata list` | read-only |
+| `kata_status` | `kata status` | read-only; a drifted result is not a tool error |
+| `kata_doctor` | `kata doctor` | read-only; works even without a `kata.yml` |
+| `kata_add` | `kata add` | deploys immediately unless `no_sync` is set |
+| `kata_sync` | `kata sync` | `dry_run` previews with no side effects at all |
+| `kata_import` | `kata import` | destructive only when `adopt` is set |
+| `kata_update` | `kata update` | `dry_run` still reaches the network to resolve refs |
+| `kata_prune` | `kata prune` | only deletes anything when `apply` is set |
+| `kata_remove` | `kata remove` | no dry-run — call `kata_list` first to confirm the target |
 
 ## Manifest
 
@@ -426,7 +537,9 @@ cannot be read by kata 0.1.x, even though the manifest `version` is still 1.
 
 ### Roadmap
 
-- MCP server configuration merging
+- MCP server configuration merging (kata managing *other* tools' MCP config as a deployment
+  target — not to be confused with `kata mcp`, which is kata *itself* acting as an MCP server;
+  see [Using kata from an AI agent](#using-kata-from-an-ai-agent))
 - Additional targets beyond Claude Code
 - A published JSON Schema for `kata.yml`
 

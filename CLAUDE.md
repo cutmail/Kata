@@ -26,8 +26,12 @@ CI は linux・macOS・**windows** の 3 つで `go test -short` を回し、lin
 - `source.Fetcher` — 取得元（git / url / local）。取得元を増やすときはここを実装する
 - `target.Resolver` — 配置先（Claude Code）。他エージェント対応はここを実装する
 
+`cmd/kata`（CLI）と `internal/mcpserver`（MCP サーバー）はどちらも `internal/app` を呼ぶだけの
+薄い層で、対等な「入口」の関係にある。ビジネスロジックをどちらか一方だけに書かないこと —
+`internal/app` に置けば両方から使える。
+
 ```
-cmd/kata/          CLI（cobra）
+cmd/kata/          CLI（cobra）と `kata mcp` の配線
 internal/manifest  kata.yml のパース・正規化・検証
 internal/lockfile  kata.lock
 internal/state     配置実績の記録（state.json）
@@ -38,6 +42,7 @@ internal/linker    配置と撤去（symlink / コピー）
 internal/digest    内容ダイジェスト。所有の判定と取得物の検証に使う
 internal/copyfs    ディレクトリ木の複製。import が local/ へ取り込むのに使う
 internal/app       オーケストレーション
+internal/mcpserver kata の操作を MCP ツールとして公開する（`kata mcp` の実体）
 ```
 
 ## 守るべき不変条件
@@ -98,15 +103,20 @@ copy 戦略ではディレクトリを rename で上書きできないため、�
 
 対応済み:
 
-- コマンド: `init`/`add`/`sync`/`list`/`status`/`import`/`update`/`doctor`/`prune`/`remove`
+- コマンド: `init`/`add`/`sync`/`list`/`status`/`import`/`update`/`doctor`/`prune`/`remove`/`mcp`
 - 種別: skill / command / agent
 - 取得元: git（サブパス可）/ url（tar.gz・tgz・zip）/ local
 - 配置戦略: link / copy / auto
 - スコープ: user / project
 - profiles によるパッケージの絞り込み
+- 全コマンドの `--json` 出力（`internal/app` のレポート型に json タグを付与）
+- `kata mcp`: kata 自身の操作（init/add/sync/list/status/import/update/doctor/prune/remove）を
+  `internal/mcpserver` 経由で MCP ツールとして stdio 越しに公開する。各ツールは CLI の
+  カレントディレクトリに相当する `dir` 引数を明示的に取る（`internal/app.OpenFrom`）
 
-未対応: MCP 設定のマージ、他エージェント向け Resolver（Cursor 等）、
-`kata.yml` の JSON Schema 公開。
+未対応: MCP 設定のマージ（kata が*他の*ツールの MCP 設定を配置管理する機能。上の
+`kata mcp` — kata *自身*が MCP サーバーになる機能 — とは別物なので混同しないこと）、
+他エージェント向け Resolver（Cursor 等）、`kata.yml` の JSON Schema 公開。
 
 ## 設計上の注意
 

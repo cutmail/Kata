@@ -17,6 +17,8 @@ AIエージェント向けのスキルパッケージマネージャ。
 - **宣言との差分を収束**：宣言から消したものは配置も撤去される（冪等）
 - **profiles** で配置対象を絞り込み
 - **既存ファイルを壊さない**：kata が作っていないものは上書きも削除もしない
+- **エージェントから扱いやすい**：全コマンドが `--json` 出力に対応し、`kata mcp` で
+  kata 自身の操作を MCP ツールとして公開する（[AI エージェントから kata を使う](#ai-エージェントから-kata-を使う)）
 
 ## インストール
 
@@ -129,11 +131,20 @@ $ kata sync
 
 主なフラグ：
 
+- `kata init` — `--json`
 - `kata add` — `--type skill|command|agent` / `--name` / `--path` / `--ref` / `--url` /
-  `--scope user|project` / `--strategy link|copy|auto` / `--profile` / `--no-sync`
-- `kata sync` — `--dry-run` / `--force` / `--profile` / `--prune` / `--adopt`
-- `kata import` — `--dry-run` / `--adopt` / `--type`
-- `kata prune` — `--apply`（付けなければ何も消さない）/ `--store` / `--staging` / `--state`
+  `--scope user|project` / `--strategy link|copy|auto` / `--profile` / `--no-sync` / `--json`
+- `kata sync` — `--dry-run` / `--force` / `--profile` / `--prune` / `--adopt` / `--json`
+- `kata list` — `--json`
+- `kata status` — `-q`/`--quiet`（何も出さず終了コードだけで結果を伝える）/ `--json`
+- `kata import` — `--dry-run` / `--adopt` / `--type` / `--json`
+- `kata update` — `--dry-run`（lock 解決のためネットワークには触れる）/ `--no-sync` / `--json`
+- `kata doctor` — `--strict`（warning でも終了コード 1 にする）/ `--json`
+- `kata prune` — `--apply`（付けなければ何も消さない）/ `--store` / `--staging` / `--state` / `--json`
+- `kata remove` — `--json`
+
+すべてのコマンドが `--json` を受け付け、テキストの代わりに結果を JSON で標準出力へ書く。
+詳しくは [AI エージェントから kata を使う](#ai-エージェントから-kata-を使う) を参照。
 
 `--type` と `--name` は省略時に推測する（`.md` なら command、ディレクトリなら skill）。
 agent も `.md` なので形からは区別できず、`--type agent` の明示が必要。
@@ -154,6 +165,68 @@ $ kata import --adopt            # さらに元を退避して symlink に置き
 `profiles:` を書いていないパッケージは常に選ばれる。`kata sync --profile work` は
 `work` を含むものだけを配置し、**選外のものは配置も lock もそのまま残す**。
 剥がしたいときだけ `--prune` を付ける。`KATA_PROFILE` で既定値を決められる。
+
+## AI エージェントから kata を使う
+
+kata は人間がコマンドを打つだけでなく、エージェントが直接操作することも想定している。
+方法は 2 つある。
+
+### `--json`
+
+すべてのコマンドが `--json` を受け付ける。付けると、上で示したテキストの代わりに
+結果を JSON で標準出力へ書く。
+
+```console
+$ kata add ./local/skills/pdf --json
+{
+  "package": {
+    "name": "pdf",
+    "type": "skill",
+    "local": "./local/skills/pdf",
+    "scope": "user",
+    "strategy": "link"
+  },
+  "sync": {
+    "changes": [
+      { "name": "pdf", "type": "skill", "action": "create", "dest": "/home/you/.claude/skills/pdf" }
+    ],
+    "dry_run": false
+  }
+}
+```
+
+終了コードの意味は `--json` を付けなかったときと変わらない（`kata status --json` は
+ズレがあれば引き続き終了コード 1 を返す）ので、終了コードだけを見ているスクリプトは
+そのまま動く。
+
+### `kata mcp`
+
+`kata mcp` は kata 自身を標準入出力ベースの [MCP](https://modelcontextprotocol.io)
+サーバーとして起動する。エージェントは CLI を叩く代わりに、kata の操作をツールとして
+直接呼び出せる。Claude Code への登録は次のとおり。
+
+```console
+$ claude mcp add kata -- kata mcp
+```
+
+各ツールは任意の `dir` 引数を受け取り、それを起点に `kata.yml` を探す
+（CLI がカレントディレクトリを起点にするのと同じ挙動）。省略時はサーバープロセス
+自身の作業ディレクトリが使われる。これは下の今後の項目にある「MCP サーバ設定の
+マージ」とは別の機能であることに注意 —— そちらは kata が*他の*ツールの MCP 設定を
+配置管理する話で、`kata mcp` は kata *自身*が MCP サーバーになる話。
+
+| ツール | 対応するコマンド | 補足 |
+| --- | --- | --- |
+| `kata_init` | `kata init` | |
+| `kata_list` | `kata list` | 読み取り専用 |
+| `kata_status` | `kata status` | 読み取り専用。ズレの報告自体はツールの失敗にならない |
+| `kata_doctor` | `kata doctor` | 読み取り専用。`kata.yml` が無くても動く |
+| `kata_add` | `kata add` | `no_sync` を付けない限りその場で配置まで行う |
+| `kata_sync` | `kata sync` | `dry_run` は本当に何も変更しないプレビュー |
+| `kata_import` | `kata import` | `adopt` を付けたときだけ破壊的 |
+| `kata_update` | `kata update` | `dry_run` でも ref 解決のためネットワークに触れる |
+| `kata_prune` | `kata prune` | `apply` を付けたときだけ実際に削除する |
+| `kata_remove` | `kata remove` | dry-run が無い。先に `kata_list` で対象を確認すること |
 
 ## kata.yml
 
@@ -277,6 +350,8 @@ go test -short ./...       # ネットワーク不要のものだけ
 
 ## 今後
 
-- MCP サーバ設定のマージ
+- MCP サーバ設定のマージ（kata が*他の*ツールの MCP 設定を配置管理する機能。
+  kata *自身*が MCP サーバーになる `kata mcp` とは別物 ——
+  [AI エージェントから kata を使う](#ai-エージェントから-kata-を使う) 参照）
 - 他エージェント（Cursor 等）への配置
 - `kata.yml` の JSON Schema 公開
