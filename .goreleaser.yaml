@@ -1,0 +1,102 @@
+# GoReleaser builds the release archives, publishes them to GitHub Releases
+# and updates the Homebrew tap. See https://goreleaser.com
+version: 2
+
+# 明示しないと GoReleaser は git remote（cutmail/Kata）から名前を拾い、
+# 成果物が Kata_darwin_arm64.tar.gz になる。README と Release の
+# ダウンロード URL、attestation の検証手順はすべて小文字を前提にしているので固定する。
+project_name: kata
+
+before:
+  hooks:
+    # go mod tidy は go.mod / go.sum を書き換えるため、リリース時には実行しない。
+    # 作業ツリーが汚れると GoReleaser がリリースを中断するうえ、
+    # タグ付け時点と異なる依存が混入しうる。差分チェックは CI 側で行う。
+    - go mod download
+    - go mod verify
+
+builds:
+  - id: kata
+    main: ./cmd/kata
+    binary: kata
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    # -trimpath でビルダーの絶対パスをバイナリから取り除く。
+    # mod_timestamp と併せて再現可能なビルドにし、provenance の検証を意味あるものにする。
+    flags:
+      - -trimpath
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    # ダウンロード URL を安定させるため、バージョンを含めない名前にする。
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - README.md
+      - README.ja.md
+      - LICENSE
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+# Homebrew は tap の cask として配布する（GoReleaser では brews より cask が現行）。
+homebrew_casks:
+  - name: kata
+    binaries: [kata]
+    repository:
+      owner: cutmail
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    homepage: "https://github.com/cutmail/kata"
+    description: "A package manager for AI agent skills"
+    license: MIT
+    # 隔離属性（com.apple.quarantine）を cask 側で剥がすことはしない。
+    # 無署名配布と組み合わさると、tap への書き込み権限を得た者が
+    # brew upgrade 経由で全利用者に無警告のコード実行を通せてしまうため。
+    # Gatekeeper の警告を消すかどうかは利用者が判断する。
+    caveats: |
+      kata is not notarized by Apple, so Gatekeeper may refuse to run it.
+      Verify the release provenance first:
+
+        gh attestation verify $(brew --prefix)/bin/kata -R cutmail/kata
+
+      Then, if you accept the risk, clear the quarantine attribute yourself:
+
+        xattr -d com.apple.quarantine $(brew --prefix)/bin/kata
+
+release:
+  draft: false
+  prerelease: auto
+  footer: |
+    ## Install
+
+    ```
+    brew install --cask cutmail/tap/kata
+    ```
+
+    ## Verify
+
+    Every archive and binary in this release carries a GitHub-native SLSA build
+    provenance attestation. `checksums.txt` lives in this same release, so an
+    attacker who can replace the artifacts can replace the checksums too — verify
+    the attestation instead:
+
+    ```
+    gh attestation verify kata_darwin_arm64.tar.gz -R cutmail/kata
+    ```

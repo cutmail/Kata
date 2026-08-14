@@ -1,0 +1,31 @@
+# 依存と GitHub Actions の更新を Dependabot に追わせる。
+# ワークフローの Action は commit SHA でピンしているため手で追いにくいが、
+# Dependabot は SHA と併記コメントの両方を書き換えてくれる。
+version: 2
+
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      # パッチ・マイナー更新は 1 本の PR にまとめる。メジャーは個別に見る。
+      go-dependencies:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      github-actions:
+        patterns: ["*"]
+        update-types: [minor, patch]
