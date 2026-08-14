@@ -19,7 +19,7 @@ jobs:
       # シークレットに触れる job なので、Action はすべて commit SHA でピンする。
       # タグは書き換え可能なため、タグ参照では上流の乗っ取りをそのまま取り込んでしまう。
       # 更新は Dependabot（.github/dependabot.yml）が SHA ごと提案する。
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
