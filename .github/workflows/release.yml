@@ -23,7 +23,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           # go.mod が宣言する Go で固定する。stable 指定だと脆弱性修正前の
           # ツールチェーンでリリースを作ってしまう可能性がある。
@@ -31,7 +31,7 @@ jobs:
 
       - run: go test ./...
 
-      - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
           # GoReleaser 本体も正確な版に固定する（"~> v2" だと実行時に版が動く）。
           version: "2.17.1"
